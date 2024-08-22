@@ -181,5 +181,11 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
                 invalidate()
             }
         }
+        // 檢查是否有偵測到人物
+        boundingBoxes.forEach { box ->
+            if (box.clsName == "person") {
+                Log.d("Detector", "Person detected at ${currentDateTime}")
+            }
+        }
     }
 }

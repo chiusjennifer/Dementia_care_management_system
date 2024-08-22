@@ -3,6 +3,7 @@ package com.surendramaran.yolov8tflite
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
+import android.util.Log
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
@@ -153,6 +154,11 @@ class Detector(
                 if (y1 < 0F || y1 > 1F) continue
                 if (x2 < 0F || x2 > 1F) continue
                 if (y2 < 0F || y2 > 1F) continue
+
+                //如果偵測到人物，紀錄Log
+                //if (clsName == "person"){
+                //    Log.d("Detector", "Person detected with confidence: $maxConf at [$x1, $y1,$x2, $y2]")
+               // }
 
                 boundingBoxes.add(
                     BoundingBox(

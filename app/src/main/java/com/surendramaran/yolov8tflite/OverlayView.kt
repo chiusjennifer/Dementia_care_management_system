@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import androidx.core.content.ContextCompat
 import java.util.LinkedList
@@ -57,13 +58,18 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
 
+        val detectRect = RectF(400f, 600f, 700f, 880f)
+        canvas.drawRect(detectRect,detectPaint)
+
         results.forEach {
             val left = it.x1 * width
             val top = it.y1 * height
             val right = it.x2 * width
             val bottom = it.y2 * height
 
-            canvas.drawRect(left, top, right, bottom, boxPaint)
+            val boxRect = RectF(left, top, right, bottom)
+            canvas.drawRect(boxRect, boxPaint)
+
             val drawableText = it.clsName
 
             textBackgroundPaint.getTextBounds(drawableText, 0, drawableText.length, bounds)
@@ -77,9 +83,11 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                 textBackgroundPaint
             )
             canvas.drawText(drawableText, left, top + bounds.height(), textPaint)
-            val rect = RectF(400f, 600f, 700f, 880f)
-            canvas.drawRect(rect, detectPaint)
 
+            //檢查是否有交集
+            if(RectF.intersects(boxRect, detectRect)){
+                Log.d("OverlayView","Green box intersects with red box: $drawableText")
+            }
         }
     }
 
