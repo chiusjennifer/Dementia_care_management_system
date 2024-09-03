@@ -155,11 +155,6 @@ class Detector(
                 if (x2 < 0F || x2 > 1F) continue
                 if (y2 < 0F || y2 > 1F) continue
 
-                //如果偵測到人物，紀錄Log
-                //if (clsName == "person"){
-                //    Log.d("Detector", "Person detected with confidence: $maxConf at [$x1, $y1,$x2, $y2]")
-               // }
-
                 boundingBoxes.add(
                     BoundingBox(
                         x1 = x1, y1 = y1, x2 = x2, y2 = y2,

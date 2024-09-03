@@ -4,10 +4,16 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.hardware.camera2.CaptureRequest
 import android.os.Bundle
 import android.util.Log
+import android.util.Range
+import android.util.Size
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -16,42 +22,45 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.surendramaran.yolov8tflite.Constants.LABELS_PATH
 import com.surendramaran.yolov8tflite.Constants.MODEL_PATH
 import com.surendramaran.yolov8tflite.databinding.ActivityMainBinding
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity(), Detector.DetectorListener {
-    private lateinit var binding: ActivityMainBinding
-    private val isFrontCamera = false
-    private val currentDateTime = getCurrentDateTime()
+    private lateinit var binding: ActivityMainBinding// 使用 ViewBinding
+    private val isFrontCamera = false// 用于选择是否使用前置摄像头
+    private val currentDateTime = getCurrentDateTime()// 获取当前日期和时间
     private var preview: Preview? = null
     private var imageAnalyzer: ImageAnalysis? = null
     private var camera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
-    private lateinit var detector: Detector
+    private lateinit var detector: Detector// 检测器对象，用于进行物体检测
     private lateinit var cameraExecutor: ExecutorService //用於管理和控制多線程操作。它允許你執行異步任務並管理這些任務的生命周期。
-    private lateinit var preferencesHelper: PreferencesHelper
+    // 定義DataStore變數
+    private lateinit var dataStore: DataStore<Preferences>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
+        binding = ActivityMainBinding.inflate(layoutInflater)// 绑定视图
         setContentView(binding.root)
 
-        detector = Detector(baseContext, MODEL_PATH, LABELS_PATH, this)
-        detector.setup()
+        detector = Detector(baseContext, MODEL_PATH, LABELS_PATH, this)// 初始化检测器
+        detector.setup()// 设置检测器
 
-        preferencesHelper = PreferencesHelper(this)
         if (allPermissionsGranted()) {
-            startCamera()
+            startCamera()// 如果权限被授予，则启动相机
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
 
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        cameraExecutor = Executors.newSingleThreadExecutor()// 初始化单线程执行器
     }
 
     private fun startCamera() {
@@ -62,6 +71,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    @OptIn(ExperimentalCamera2Interop::class)
     private fun bindCameraUseCases() {
         val cameraProvider = cameraProvider ?: throw IllegalStateException("Camera initialization failed.")
 
@@ -78,19 +88,21 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
             .build()
 
         imageAnalyzer = ImageAnalysis.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setTargetRotation(binding.viewFinder.display.rotation)
-            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)// 设置目标比例
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)// 选择保持最新策略
+            .setTargetRotation(binding.viewFinder.display.rotation)// 设置目标旋转
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888) // 设置输出图像格式
             .build()
 
+
         imageAnalyzer?.setAnalyzer(cameraExecutor) { imageProxy ->
-            val bitmapBuffer =
-                Bitmap.createBitmap(
-                    imageProxy.width,
-                    imageProxy.height,
-                    Bitmap.Config.ARGB_8888
-                )
+            val currentTimestamp = System.currentTimeMillis()
+                val bitmapBuffer =
+                    Bitmap.createBitmap(
+                        imageProxy.width,
+                        imageProxy.height,
+                        Bitmap.Config.ARGB_8888
+                    )
             imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
             imageProxy.close()
 
@@ -156,7 +168,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
     }
     fun getCurrentDateTime():String{
         val currentDate = Date()
-        val dateFormat = SimpleDateFormat("yy-MM-dd HH:mm")
+        val dateFormat = SimpleDateFormat("yy-MM-dd HH:mm:ss", Locale.getDefault())
         return dateFormat.format(currentDate)
     }
 
@@ -174,17 +186,12 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
 
     override fun onDetect(boundingBoxes: List<BoundingBox>, inferenceTime: Long) {
         runOnUiThread {
+            val currentDateTime = getCurrentDateTime()
             binding.currentTime.text = "${currentDateTime}"
             binding.inferenceTime.text = "${inferenceTime}ms"
             binding.overlay.apply {
                 setResults(boundingBoxes)
-                invalidate()
-            }
-        }
-        // 檢查是否有偵測到人物
-        boundingBoxes.forEach { box ->
-            if (box.clsName == "person") {
-                Log.d("Detector", "Person detected at ${currentDateTime}")
+                invalidate() //刷新重繪當前的View
             }
         }
     }
