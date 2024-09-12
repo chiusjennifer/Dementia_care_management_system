@@ -71,4 +71,6 @@ dependencies {
     // Coroutine Lifecycle Scopes
     implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.2.0")
     implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.2.0")
+
+    implementation ("com.squareup.okhttp3:okhttp:4.9.3")
 }

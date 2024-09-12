@@ -23,13 +23,23 @@ import java.util.Locale
 import kotlin.math.max
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
-private val Context.dataStore:DataStore<Preferences> by preferencesDataStore(name = "app_preferences")
+private val Context.dataStore:DataStore<Preferences> by preferencesDataStore(name = "settings")
 class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs) {
+    private val client = OkHttpClient()
     private val currentDateTime = getCurrentDateTime()
     private var results = listOf<BoundingBox>()
     private var boxPaint = Paint()
@@ -38,7 +48,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     private var detectPaint = Paint()
     private val renderThread = RenderThread()
     private var bounds = Rect()
-    private val LAST_DETECTED_TIME_KEY = stringPreferencesKey("last_detected_time")
+    private val DETECTED_TIMES_KEY = stringSetPreferencesKey("detected_times")
     private val choreographer = Choreographer.getInstance()
     private var lastLogTime = 0L  // Variable to store the last log time in milliseconds
     private val frameCallback = object : Choreographer.FrameCallback {
@@ -116,11 +126,19 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                 // Check the current time and log if more than 1 second has passed
                 val currentTime = System.currentTimeMillis()
                 if (currentTime - lastLogTime >= 10000) {  // 1000 milliseconds = 1 second
-                    val currentDateTime = getCurrentDateTime() // Fetch the current date and time
+                    lastLogTime = currentTime  // Update the last log time
+                    val currentDateTime = getCurrentDateTime()
                     Log.d(TAG, "person exist $currentDateTime")
                     // Save to DataStore
-                    saveDetectedTimeToDataStore(context, currentDateTime)
-                    lastLogTime = currentTime  // Update the last log time
+                    // Save to DataStore using a coroutine
+                    CoroutineScope(Dispatchers.IO).launch {
+                        appendDetectedTime(currentDateTime) // Save current time
+                        //Check detection count within 5 minutes
+                        val count = countDetectionsWithinFiveMinutes()
+                        if (count > 1){
+                            sendLineNotification("注意!")
+                        }
+                    }
 
                 }
             }
@@ -151,10 +169,65 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         })
     }
 
-    private fun saveDetectedTimeToDataStore(context: Context, dateTime: String) {
+    // 追加新的时间字符串到集合中
+    suspend fun appendDetectedTime(newTime: String) {
+        context.dataStore.edit { settings ->
+            // 读取现有的时间集合，如果为空则使用空集合
+            val currentTimes = settings[DETECTED_TIMES_KEY] ?: emptySet()
+            // 将新的时间添加到集合中
+            val updatedTimes = currentTimes + newTime
+            // 将更新后的集合存储回 DataStore
+            settings[DETECTED_TIMES_KEY] = updatedTimes
+            Log.d(TAG, "Saved detected time: $newTime") // 调试日志
+        }
+    }
+    // Function to count detections within the last 5 minutes
+    private suspend fun countDetectionsWithinFiveMinutes(): Int {
+        val fiveMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5)
+        val times = context.dataStore.data.map { settings ->
+            settings[DETECTED_TIMES_KEY]?.map { time ->
+                SimpleDateFormat("yy-MM-dd HH:mm:ss", Locale.getDefault()).parse(time)?.time ?: 0L
+            } ?: emptyList()
+        }.firstOrNull() ?: emptyList()
+
+        return times.count { it >= fiveMinutesAgo }
+    }
+    private fun sendLineNotification(message: String) {
         CoroutineScope(Dispatchers.IO).launch {
-            context.dataStore.edit { preferences ->
-                preferences[LAST_DETECTED_TIME_KEY] = dateTime
+            try {
+                val url = "https://api.line.me/v2/bot/message/push"
+                val accessToken = "jzdx0zKHtE5wRCOvUtiXCM8zK77RMrozke9c72RT2KU" // Replace with your actual LINE access token
+                val userId = "AI失智照護管理系統x" // Replace with the actual user ID to send the message
+
+                val json = """
+            {
+                "to": "$userId",
+                "messages": [
+                    {
+                        "type": "text",
+                        "text": "$message"
+                    }
+                ]
+            }
+            """.trimIndent()
+
+                val requestBody = json.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("Authorization", "Bearer $accessToken")
+                    .post(requestBody)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "Failed to send LINE notification: ${response.message}, Code: ${response.code}")
+                    } else {
+                        Log.d(TAG, "LINE notification sent successfully")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending LINE notification: ${e.message}")
             }
         }
     }
