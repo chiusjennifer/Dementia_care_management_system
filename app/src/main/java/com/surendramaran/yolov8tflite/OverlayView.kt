@@ -31,15 +31,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okio.IOException
 import java.util.concurrent.TimeUnit
 
 private val Context.dataStore:DataStore<Preferences> by preferencesDataStore(name = "settings")
 class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs) {
     private val client = OkHttpClient()
+    private val token = "jzdx0zKHtE5wRCOvUtiXCM8zK77RMrozke9c72RT2KU" // 替換為你的 LINE Notify Token
+    private val notifyUrl = "https://notify-api.line.me/api/notify"
     private val currentDateTime = getCurrentDateTime()
     private var results = listOf<BoundingBox>()
     private var boxPaint = Paint()
@@ -98,7 +105,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
 
-        val detectRect = RectF(200f, 600f, 900f, 900f)
+        val detectRect = RectF(400f, 450f, 700f, 800f)
         canvas.drawRect(detectRect,detectPaint)
 
         results.forEach { boundingBox ->
@@ -129,14 +136,13 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                     lastLogTime = currentTime  // Update the last log time
                     val currentDateTime = getCurrentDateTime()
                     Log.d(TAG, "person exist $currentDateTime")
-                    // Save to DataStore
                     // Save to DataStore using a coroutine
                     CoroutineScope(Dispatchers.IO).launch {
                         appendDetectedTime(currentDateTime) // Save current time
-                        //Check detection count within 5 minutes
-                        val count = countDetectionsWithinFiveMinutes()
+                        //Check detection count within 1 minutes
+                        val count = countDetectionsWithinOneMinutes()
                         if (count > 1){
-                            sendLineNotification("注意!")
+                            sendLineNotify("注意!")
                         }
                     }
 
@@ -182,54 +188,46 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         }
     }
     // Function to count detections within the last 5 minutes
-    private suspend fun countDetectionsWithinFiveMinutes(): Int {
-        val fiveMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5)
+    private suspend fun countDetectionsWithinOneMinutes(): Int {
+        val oneMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1)
         val times = context.dataStore.data.map { settings ->
             settings[DETECTED_TIMES_KEY]?.map { time ->
                 SimpleDateFormat("yy-MM-dd HH:mm:ss", Locale.getDefault()).parse(time)?.time ?: 0L
             } ?: emptyList()
         }.firstOrNull() ?: emptyList()
 
-        return times.count { it >= fiveMinutesAgo }
+        return times.count { it >= oneMinutesAgo }
     }
-    private fun sendLineNotification(message: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val url = "https://api.line.me/v2/bot/message/push"
-                val accessToken = "jzdx0zKHtE5wRCOvUtiXCM8zK77RMrozke9c72RT2KU" // Replace with your actual LINE access token
-                val userId = "AI失智照護管理系統x" // Replace with the actual user ID to send the message
+    private fun sendLineNotify(message: String) {
+        // 建立 POST 請求
+        val formBody = FormBody.Builder()
+            .add("message", message)
+            .build()
 
-                val json = """
-            {
-                "to": "$userId",
-                "messages": [
-                    {
-                        "type": "text",
-                        "text": "$message"
-                    }
-                ]
+        val request = Request.Builder()
+            .url(notifyUrl)
+            .addHeader("Authorization", "Bearer $token")
+            .post(formBody)
+            .build()
+
+        // 發送請求
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                e.printStackTrace()
+                // 處理失敗
             }
-            """.trimIndent()
 
-                val requestBody = json.toRequestBody("application/json".toMediaTypeOrNull())
-
-                val request = Request.Builder()
-                    .url(url)
-                    .addHeader("Authorization", "Bearer $accessToken")
-                    .post(requestBody)
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "Failed to send LINE notification: ${response.message}, Code: ${response.code}")
-                    } else {
-                        Log.d(TAG, "LINE notification sent successfully")
-                    }
+            override fun onResponse(call: Call, response: Response) {
+                if (response.isSuccessful) {
+                    // 處理成功
+                    println("Message sent successfully!")
+                } else {
+                    // 處理錯誤
+                    println("Error: ${response.code}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error sending LINE notification: ${e.message}")
+                response.close()
             }
-        }
+        })
     }
     companion object {
         private const val BOUNDING_RECT_TEXT_PADDING = 8
