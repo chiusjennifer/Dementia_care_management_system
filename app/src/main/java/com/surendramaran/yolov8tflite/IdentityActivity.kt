@@ -48,7 +48,9 @@ class IdentityActivity : AppCompatActivity() {
         }
         // 前往主頁面的按鈕
         button.setOnClickListener {
+            val selectedItem = lunch[spinnerIdentity.selectedItemPosition] // 取得目前選擇的項目
             val intent = Intent(this, MainActivity::class.java)
+            intent.putExtra("selected_item", selectedItem) // 傳遞選擇的項目
             startActivity(intent)
             finish()
         }

@@ -47,6 +47,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     private val client = OkHttpClient()
     private val token = "jzdx0zKHtE5wRCOvUtiXCM8zK77RMrozke9c72RT2KU" // 替換為你的 LINE Notify Token
     private val notifyUrl = "https://notify-api.line.me/api/notify"
+    private var intentMessage: String? = null // 用來保存從 Intent 傳遞過來的訊息
     private val currentDateTime = getCurrentDateTime()
     private var results = listOf<BoundingBox>()
     private var boxPaint = Paint()
@@ -101,10 +102,12 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
 
 
     }
-
+    // 用來設置從 Intent 傳遞過來的訊息
+    fun setIntentMessage(message: String) {
+        this.intentMessage = message
+    }
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-
         val detectRect = RectF(400f, 450f, 700f, 800f)
         canvas.drawRect(detectRect,detectPaint)
 
@@ -142,7 +145,8 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                         //Check detection count within 1 minutes
                         val count = countDetectionsWithinOneMinutes()
                         if (count > 1){
-                            sendLineNotify("注意!")
+                            //顯示訊息
+                            sendLineNotify("注意病人:$intentMessage")
                         }
                     }
 

@@ -35,6 +35,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity(), Detector.DetectorListener {
     private lateinit var binding: ActivityMainBinding// 使用 ViewBinding
+    private lateinit var overlayView: OverlayView
     private val isFrontCamera = false// 用于选择是否使用前置摄像头
     private val currentDateTime = getCurrentDateTime()// 获取当前日期和时间
     private var preview: Preview? = null
@@ -50,7 +51,6 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)// 绑定视图
         setContentView(binding.root)
-
         detector = Detector(baseContext, MODEL_PATH, LABELS_PATH, this)// 初始化检测器
         detector.setup()// 设置检测器
 
@@ -61,6 +61,14 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()// 初始化单线程执行器
+        // 初始化 OverlayView
+        overlayView = findViewById(R.id.overlay)
+        // 接收來自 Intent 的數據
+        val message = intent.getStringExtra("example_key")
+        // 傳遞資料到 OverlayView
+        if (message != null) {
+            overlayView.setIntentMessage(message)
+        }
     }
 
     private fun startCamera() {
