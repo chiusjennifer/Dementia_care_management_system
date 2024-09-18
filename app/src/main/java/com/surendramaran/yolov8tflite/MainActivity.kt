@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         // 初始化 OverlayView
         overlayView = findViewById(R.id.overlay)
         // 接收來自 Intent 的數據
-        val message = intent.getStringExtra("example_key")
+        val message = intent.getStringExtra("selected_item")
         // 傳遞資料到 OverlayView
         if (message != null) {
             overlayView.setIntentMessage(message)
