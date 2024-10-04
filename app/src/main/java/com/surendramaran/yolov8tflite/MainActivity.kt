@@ -105,12 +105,12 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
 
         imageAnalyzer?.setAnalyzer(cameraExecutor) { imageProxy ->
             val currentTimestamp = System.currentTimeMillis()
-                val bitmapBuffer =
-                    Bitmap.createBitmap(
-                        imageProxy.width,
-                        imageProxy.height,
-                        Bitmap.Config.ARGB_8888
-                    )
+            val bitmapBuffer =
+                Bitmap.createBitmap(
+                    imageProxy.width,
+                    imageProxy.height,
+                    Bitmap.Config.ARGB_8888
+                )
             imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
             imageProxy.close()
 

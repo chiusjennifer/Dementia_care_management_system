@@ -25,6 +25,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.surendramaran.yolov8tflite.BoundingBox
+import com.surendramaran.yolov8tflite.R
+import com.surendramaran.yolov8tflite.RenderThread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -142,18 +145,16 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                     // Save to DataStore using a coroutine
                     CoroutineScope(Dispatchers.IO).launch {
                         appendDetectedTime(currentDateTime) // Save current time
-                        //Check detection count within 1 minutes
-                        val count = countDetectionsWithinOneMinutes()
-                        if (count > 1){
+                        if (countDetectionsOverTenSeconds()> 0){
                             //顯示訊息
                             sendLineNotify("注意病人:$intentMessage")
                         }
                     }
-
                 }
             }
 
         }
+        clear()
     }
 
     fun setResults(boundingBoxes: List<BoundingBox>) {
@@ -192,15 +193,24 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         }
     }
     // Function to count detections within the last 5 minutes
-    private suspend fun countDetectionsWithinOneMinutes(): Int {
-        val oneMinutesAgo = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1)
-        val times = context.dataStore.data.map { settings ->
+    private suspend fun countDetectionsOverTenSeconds(): Int {
+        val detectionTimes = context.dataStore.data.map { settings ->
             settings[DETECTED_TIMES_KEY]?.map { time ->
-                SimpleDateFormat("yy-MM-dd HH:mm:ss", Locale.getDefault()).parse(time)?.time ?: 0L
+                // If the time is already a timestamp, convert it directly to Long
+                time.toLongOrNull() ?: 0L
             } ?: emptyList()
         }.firstOrNull() ?: emptyList()
 
-        return times.count { it >= oneMinutesAgo }
+        var count = 0
+        for (i in 1 until detectionTimes.size) {
+            val previousTime = detectionTimes[i - 1]
+            val currentDetectionTime = detectionTimes[i]
+            // If the time between two detections is 10 seconds or more, increase the count
+            if (currentDetectionTime - previousTime >= TimeUnit.SECONDS.toMillis(10)) {
+                count++
+            }
+        }
+        return count
     }
     private fun sendLineNotify(message: String) {
         // 建立 POST 請求
