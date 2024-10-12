@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
@@ -137,24 +138,32 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                 )
                 canvas.drawText(drawableText, left, top + textHeight, textPaint)
                 // Check the current time and log if more than 1 second has passed
-                val currentTime = System.currentTimeMillis()
+                var currentTime = System.currentTimeMillis()
+                if(lastLogTime==0L)
+                {
+                    lastLogTime = currentTime
+                }
+
                 if (currentTime - lastLogTime >= 10000) {  // 1000 milliseconds = 1 second
                     lastLogTime = currentTime  // Update the last log time
-                    val currentDateTime = getCurrentDateTime()
-                    Log.d(TAG, "person exist $currentDateTime")
+                    //val currentDateTime = getCurrentDateTime()
+                    //Log.d(TAG, "person exist $currentDateTime")
                     // Save to DataStore using a coroutine
                     CoroutineScope(Dispatchers.IO).launch {
-                        appendDetectedTime(currentDateTime) // Save current time
+                        appendDetectedTime() // Save current time
                         if (countDetectionsOverTenSeconds()> 0){
                             //顯示訊息
                             sendLineNotify("注意病人:$intentMessage")
+                            //todo 清空datastore
+                            clearAllDetectedTimes()  // 清空 DataStore 中的检测记录
+                            //lastLogTime = 0L
+                            //currentTime = System.currentTimeMillis()
                         }
                     }
                 }
             }
-
         }
-        clear()
+        //clear()
     }
 
     fun setResults(boundingBoxes: List<BoundingBox>) {
@@ -180,39 +189,47 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         })
     }
 
-    // 追加新的时间字符串到集合中
-    suspend fun appendDetectedTime(newTime: String) {
-        context.dataStore.edit { settings ->
-            // 读取现有的时间集合，如果为空则使用空集合
-            val currentTimes = settings[DETECTED_TIMES_KEY] ?: emptySet()
-            // 将新的时间添加到集合中
-            val updatedTimes = currentTimes + newTime
-            // 将更新后的集合存储回 DataStore
-            settings[DETECTED_TIMES_KEY] = updatedTimes
-            Log.d(TAG, "Saved detected time: $newTime") // 调试日志
+    // 追加新的时间戳到集合中
+    suspend fun appendDetectedTime() {
+        val currentTimeMillis = System.currentTimeMillis()
+        try {
+            context.dataStore.edit { settings ->
+                val currentTimes = settings[DETECTED_TIMES_KEY]?.map { it.toLong() } ?: emptyList()
+                val updatedTimes = currentTimes + currentTimeMillis
+                settings[DETECTED_TIMES_KEY] = updatedTimes.map { it.toString() }.toSet()
+                Log.d(TAG, "Saved detected time: $currentTimeMillis")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save detected time: ${e.message}")
         }
     }
-    // Function to count detections within the last 5 minutes
     private suspend fun countDetectionsOverTenSeconds(): Int {
         val detectionTimes = context.dataStore.data.map { settings ->
-            settings[DETECTED_TIMES_KEY]?.map { time ->
-                // If the time is already a timestamp, convert it directly to Long
-                time.toLongOrNull() ?: 0L
-            } ?: emptyList()
+            settings[DETECTED_TIMES_KEY]?.map { it.toLong() } ?: emptyList()
         }.firstOrNull() ?: emptyList()
 
+        val now = System.currentTimeMillis()
         var count = 0
-        for (i in 1 until detectionTimes.size) {
-            val previousTime = detectionTimes[i - 1]
-            val currentDetectionTime = detectionTimes[i]
-            // If the time between two detections is 10 seconds or more, increase the count
-            if (currentDetectionTime - previousTime >= TimeUnit.SECONDS.toMillis(10)) {
+        // 计算在最近10秒内的检测次数
+        detectionTimes.forEach { detectionTime ->
+            if (now - detectionTime <= TimeUnit.SECONDS.toMillis(10)) {
                 count++
             }
         }
         return count
     }
     private fun sendLineNotify(message: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                clearAllDetectedTimes() // 清空資料
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Failed to clear detected times before sending notification: ${e.message}"
+                )
+                return@launch
+            }
+        }
         // 建立 POST 請求
         val formBody = FormBody.Builder()
             .add("message", message)
@@ -229,6 +246,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
             override fun onFailure(call: Call, e: IOException) {
                 e.printStackTrace()
                 // 處理失敗
+                Log.e(TAG, "Failed to send LINE notification: ${e.message}")
             }
 
             override fun onResponse(call: Call, response: Response) {
@@ -237,11 +255,19 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                     println("Message sent successfully!")
                 } else {
                     // 處理錯誤
-                    println("Error: ${response.code}")
+                    Log.e(TAG, "Failed to send message: ${response.code}")
                 }
                 response.close()
             }
         })
+    }
+    private suspend fun clearAllDetectedTimes() {
+        try {
+            context.dataStore.edit { it.clear() }
+            Log.d(TAG, "Cleared all detected times.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear detected times: ${e.message}")
+        }
     }
     companion object {
         private const val BOUNDING_RECT_TEXT_PADDING = 8
