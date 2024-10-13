@@ -97,7 +97,7 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
         val detectRect = RectF(400f, 450f, 700f, 800f)
-        canvas.drawRect(detectRect,detectPaint)
+        canvas.drawRect(detectRect, detectPaint)
 
         results.forEach { boundingBox ->
             val left = boundingBox.x1 * width
@@ -106,9 +106,8 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
             val bottom = boundingBox.y2 * height
 
             val boxRect = RectF(left, top, right, bottom)
-            if (RectF.intersects(boxRect, detectRect)&& boundingBox.clsName == "person") {
+            if (RectF.intersects(boxRect, detectRect) && boundingBox.clsName == "person") {
                 canvas.drawRect(boxRect, boxPaint)
-                // 提前計算文字尺寸
                 val drawableText = boundingBox.clsName
                 val textWidth = textPaint.measureText(drawableText)
                 val textHeight = textPaint.textSize
@@ -121,25 +120,19 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                     textBackgroundPaint
                 )
                 canvas.drawText(drawableText, left, top + textHeight, textPaint)
-                // Check the current time and log if more than 1 second has passed
-                var currentTime = System.currentTimeMillis()
-                if(lastLogTime==0L)
-                {
+
+                // 记录当前时间并判断是否满足发送通知的条件
+                val currentTime = System.currentTimeMillis()
+                if (lastLogTime == 0L) {
                     lastLogTime = currentTime
                 }
 
-                if (currentTime - lastLogTime >= 10000) {  // 1000 milliseconds = 1 second
-                    lastLogTime = currentTime  // Update the last log time
-                    // Save to DataStore using a coroutine
+                if (currentTime - lastLogTime >= 10000) {  // 10000 milliseconds = 10 seconds
+                    lastLogTime = currentTime  // 更新最后日志时间
+
+                    // 使用协程保存当前时间
                     CoroutineScope(Dispatchers.IO).launch {
-                        appendDetectedTime() // Save current time
-                        if (isDetectedForTenSeconds()){
-                            handleDetection()
-                            //顯示訊息
-                            sendLineNotify("注意病人:$intentMessage")
-                            //todo 清空datastore
-                            //clearAllDetectedTimes()  // 清空 DataStore 中的检测记录
-                        }
+                        appendDetectedTime() // 保存当前时间
                     }
                 }
             }
@@ -179,11 +172,14 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
                 existingTimes.add(currentTimeString)
                 settings[DETECTED_TIMES_KEY] = existingTimes
 
-                // Check if the size exceeds 2
+                // 检查记录数量
                 if (existingTimes.size > 2) {
-                    // Clear all entries if more than 2
-                    settings.clear()  // Clear all data
+                    // 清除所有记录
+                    settings.clear()
                     Log.d(TAG, "Cleared all detected times due to exceeding limit.")
+                } else if (existingTimes.size == 2) {
+                    // 当有两笔记录时发送 LINE 通知
+                    sendLineNotify("注意病人:$intentMessage")
                 }
 
                 Log.d(TAG, "Saved detected time: $currentTimeString")
