@@ -18,11 +18,8 @@ import androidx.datastore.preferences.core.Preferences
 import com.surendramaran.yolov8tflite.databinding.ActivityMainBinding
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.LinkedList
 import java.util.Locale
-import kotlin.math.max
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.surendramaran.yolov8tflite.BoundingBox
@@ -30,18 +27,14 @@ import com.surendramaran.yolov8tflite.R
 import com.surendramaran.yolov8tflite.RenderThread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.IOException
 import java.util.concurrent.TimeUnit
@@ -77,15 +70,6 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         // 開始幀回調
         choreographer.postFrameCallback(frameCallback)
     }
-    fun clear() {
-        textPaint.reset()
-        textBackgroundPaint.reset()
-        boxPaint.reset()
-        detectPaint.reset()
-        invalidate()
-        initPaints()
-    }
-
     private fun initPaints() {
         //文字底色
         textBackgroundPaint.color = Color.GREEN
@@ -146,24 +130,20 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
 
                 if (currentTime - lastLogTime >= 10000) {  // 1000 milliseconds = 1 second
                     lastLogTime = currentTime  // Update the last log time
-                    //val currentDateTime = getCurrentDateTime()
-                    //Log.d(TAG, "person exist $currentDateTime")
                     // Save to DataStore using a coroutine
                     CoroutineScope(Dispatchers.IO).launch {
                         appendDetectedTime() // Save current time
-                        if (countDetectionsOverTenSeconds()> 0){
+                        if (isDetectedForTenSeconds()){
+                            handleDetection()
                             //顯示訊息
                             sendLineNotify("注意病人:$intentMessage")
                             //todo 清空datastore
-                            clearAllDetectedTimes()  // 清空 DataStore 中的检测记录
-                            //lastLogTime = 0L
-                            //currentTime = System.currentTimeMillis()
+                            //clearAllDetectedTimes()  // 清空 DataStore 中的检测记录
                         }
                     }
                 }
             }
         }
-        //clear()
     }
 
     fun setResults(boundingBoxes: List<BoundingBox>) {
@@ -191,45 +171,59 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
 
     // 追加新的时间戳到集合中
     suspend fun appendDetectedTime() {
-        val currentTimeMillis = System.currentTimeMillis()
+        // 取得當前的時間，並格式化為日期時間字串
+        val currentTimeString = getCurrentFormattedTime()
+
         try {
+            // 清空 DataStore 中的所有資料
+           // context.dataStore.edit { settings ->
+           //     settings.clear()  // 清除所有現有的資料
+           // }
+
+            // 追加新的時間戳記
             context.dataStore.edit { settings ->
-                val currentTimes = settings[DETECTED_TIMES_KEY]?.map { it.toLong() } ?: emptyList()
-                val updatedTimes = currentTimes + currentTimeMillis
-                settings[DETECTED_TIMES_KEY] = updatedTimes.map { it.toString() }.toSet()
-                Log.d(TAG, "Saved detected time: $currentTimeMillis")
+                // 添加當前的時間字串
+                val updatedTimes = setOf(currentTimeString)
+                // 將更新後的時間集合存入 DataStore
+                settings[DETECTED_TIMES_KEY] = updatedTimes
+                Log.d(TAG, "Saved detected time: $currentTimeString")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save detected time: ${e.message}")
         }
     }
-    private suspend fun countDetectionsOverTenSeconds(): Int {
+    @SuppressLint("SimpleDateFormat")
+    fun getCurrentFormattedTime(): String {
+        // 使用 SimpleDateFormat 將當前時間格式化為日期時間字串
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        return dateFormat.format(Date())
+    }
+    private suspend fun isDetectedForTenSeconds(): Boolean {
+        // 從 DataStore 中取得偵測時間戳記，並將其轉換為時間格式的 Long
         val detectionTimes = context.dataStore.data.map { settings ->
-            settings[DETECTED_TIMES_KEY]?.map { it.toLong() } ?: emptyList()
+            settings[DETECTED_TIMES_KEY]?.mapNotNull { it.toLongOrNull() } ?: emptyList()
         }.firstOrNull() ?: emptyList()
 
-        val now = System.currentTimeMillis()
-        var count = 0
-        // 计算在最近10秒内的检测次数
-        detectionTimes.forEach { detectionTime ->
-            if (now - detectionTime <= TimeUnit.SECONDS.toMillis(10)) {
-                count++
-            }
+        if (detectionTimes.isEmpty()) {
+            return false
         }
-        return count
+        val now = System.currentTimeMillis()
+        val tenSecondsAgo = now - TimeUnit.SECONDS.toMillis(10)
+
+        // 找出最近 10 秒內的偵測記錄
+        val recentDetections = detectionTimes.filter { it >= tenSecondsAgo }
+
+        val earliestTime = detectionTimes.firstOrNull() ?: return false
+        return (now - earliestTime >= TimeUnit.SECONDS.toMillis(10)) && recentDetections.isNotEmpty()
+    }
+    private suspend fun handleDetection() {
+        if (isDetectedForTenSeconds()) {
+            // 發送通知之前清空資料
+            sendLineNotify("注意病人:$intentMessage")
+            clearAllDetectedTimes()  // 清空 DataStore 中的检测记录
+        }
     }
     private fun sendLineNotify(message: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                clearAllDetectedTimes() // 清空資料
-            } catch (e: Exception) {
-                Log.e(
-                    TAG,
-                    "Failed to clear detected times before sending notification: ${e.message}"
-                )
-                return@launch
-            }
-        }
         // 建立 POST 請求
         val formBody = FormBody.Builder()
             .add("message", message)
