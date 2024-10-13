@@ -171,21 +171,21 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
 
     // 追加新的时间戳到集合中
     suspend fun appendDetectedTime() {
-        // 取得當前的時間，並格式化為日期時間字串
         val currentTimeString = getCurrentFormattedTime()
 
         try {
-            // 清空 DataStore 中的所有資料
-           // context.dataStore.edit { settings ->
-           //     settings.clear()  // 清除所有現有的資料
-           // }
-
-            // 追加新的時間戳記
             context.dataStore.edit { settings ->
-                // 添加當前的時間字串
-                val updatedTimes = setOf(currentTimeString)
-                // 將更新後的時間集合存入 DataStore
-                settings[DETECTED_TIMES_KEY] = updatedTimes
+                val existingTimes = settings[DETECTED_TIMES_KEY]?.toMutableSet() ?: mutableSetOf()
+                existingTimes.add(currentTimeString)
+                settings[DETECTED_TIMES_KEY] = existingTimes
+
+                // Check if the size exceeds 2
+                if (existingTimes.size > 2) {
+                    // Clear all entries if more than 2
+                    settings.clear()  // Clear all data
+                    Log.d(TAG, "Cleared all detected times due to exceeding limit.")
+                }
+
                 Log.d(TAG, "Saved detected time: $currentTimeString")
             }
         } catch (e: Exception) {
@@ -255,10 +255,13 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
             }
         })
     }
+    // 清空 DataStore 中的检测记录
     private suspend fun clearAllDetectedTimes() {
         try {
-            context.dataStore.edit { it.clear() }
-            Log.d(TAG, "Cleared all detected times.")
+            context.dataStore.edit { settings ->
+                settings.clear()  // Clear all data
+                Log.d(TAG, "Cleared all detected times.")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to clear detected times: ${e.message}")
         }
